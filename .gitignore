@@ -4,4 +4,5 @@
 build/
 dist/
 tealer.egg-info/
+tealer_math_plugin.egg-info/
 __pycache__

@@ -60,17 +60,21 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
             return True
         return False
     
+    
     def _check_mathploit(
         self,
         bb: BasicBlock,
         current_path: List[BasicBlock],
+        checked_blocks: List[BasicBlock],
         paths_with_mathploit: List[List[BasicBlock]],
     ) -> None:
         # check for loops
-        if bb in current_path:
+        #print(bb.idx, bb.instructions[0]._line_num, bb.instructions[0]._comment)
+        if bb in current_path or bb in checked_blocks:
             return
-
+        
         current_path = current_path + [bb]
+        checked_blocks = checked_blocks + [bb]
         has_mathploit = False
         math_stack = []
         for ins in bb.instructions:
@@ -123,15 +127,18 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
                 continue
 
         for next_bb in bb.next:
-            self._check_mathploit(next_bb, current_path, paths_with_mathploit)
+            self._check_mathploit(next_bb, current_path, checked_blocks, paths_with_mathploit)
 
     def detect(self) -> "SupportedOutput":
 
         paths_with_mathploit: List[List["BasicBlock"]] = []
-        self._check_mathploit(self.teal.bbs[0], [], paths_with_mathploit)
+        
+        # self._check_bbnext(self.teal.bbs[0])
+
+        self._check_mathploit(self.teal.bbs[0], [], [], paths_with_mathploit)
 
         description = "Math exploit with smart contract storage - "
         description += "this can allow an attacker to withdraw undue rewards."
-        filename = "math_explot"
+        filename = "math_exploit"
 
         return self.generate_result(paths_with_mathploit, description, filename)

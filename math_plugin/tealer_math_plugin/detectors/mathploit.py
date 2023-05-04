@@ -1,4 +1,5 @@
 from typing import List, TYPE_CHECKING
+import time
 
 from tealer.detectors.abstract_detector import (
     AbstractDetector,
@@ -47,6 +48,10 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
         super().__init__(teal)
         self.results_number = 0
         self.count = 0
+        # Set the start time for use in later calculations
+        self.start_time = time.time()
+        self.max_time = 2000
+        self.analysis_stopped = False
         self.math_start = []
 
     def _getLastItem(self, list):
@@ -127,6 +132,11 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
                 continue
 
         for next_bb in bb.next:
+            # if the process has been running for more than 200 seconds, return to
+            # detect method
+            if time.time() - self.start_time > self.max_time:
+                self.analysis_stopped = True
+                return
             self._check_mathploit(next_bb, current_path, checked_blocks, paths_with_mathploit)
 
     def detect(self) -> "SupportedOutput":
@@ -138,7 +148,12 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
         self._check_mathploit(self.teal.bbs[0], [], [], paths_with_mathploit)
 
         description = "Math exploit with smart contract storage - "
-        description += "this can allow an attacker to withdraw undue rewards."
+        description += "this can allow an attacker to withdraw undue rewards.\n"
         filename = "math_exploit"
+
+        if self.analysis_stopped:
+            description += f"   Analysis stopped due to timeout at {self.max_time} seconds."
+        else:
+            description += f"   Analysis completed in {round(time.time() - self.start_time, 2)} seconds."
 
         return self.generate_result(paths_with_mathploit, description, filename)

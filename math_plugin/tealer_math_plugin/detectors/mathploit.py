@@ -49,7 +49,7 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
         self.checked_bbs = []
         # Set the start time for use in later calculations
         self.start_time = time.time()
-        self.max_time = 20
+        self.max_time = 2000
         self.analysis_stopped = False
         self.math_start = []
         self.math_stack = []

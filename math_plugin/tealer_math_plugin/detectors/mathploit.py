@@ -46,13 +46,13 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
 
     def __init__(self, teal: Teal):
         super().__init__(teal)
-        self.results_number = 0
-        self.count = 0
+        self.checked_bbs = []
         # Set the start time for use in later calculations
         self.start_time = time.time()
-        self.max_time = 2000
+        self.max_time = 20
         self.analysis_stopped = False
         self.math_start = []
+        self.math_stack = []
 
     def _getLastItem(self, list):
         if len(list) > 0:
@@ -70,65 +70,66 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
         self,
         bb: BasicBlock,
         current_path: List[BasicBlock],
-        checked_blocks: List[BasicBlock],
         paths_with_mathploit: List[List[BasicBlock]],
     ) -> None:
         # check for loops
         #print(bb.idx, bb.instructions[0]._line_num, bb.instructions[0]._comment)
-        if bb in current_path or bb in checked_blocks:
+        if bb in current_path:
             return
         
         current_path = current_path + [bb]
-        checked_blocks = checked_blocks + [bb]
+
+        if bb.idx not in self.checked_bbs:
+            self.checked_bbs.append(bb.idx)
+
         has_mathploit = False
-        math_stack = []
         for ins in bb.instructions:
-            stack_ins = self._getLastItem(math_stack)
+            stack_ins = self._getLastItem(self.math_stack)
 
             if ins._comment == '// 1':
                 if not isinstance(ins._prev[0], Global) and not (
                     isinstance(ins._prev[0],Gtxn) and isinstance(ins._prev[0].field,
                                                                   TypeEnum)):
-                    math_stack = []
-                    math_stack.append(ins)
+                    self.math_stack = []
+                    self.math_stack.append(ins)
                 continue
             
             if stack_ins is None:
                 continue
 
             if isinstance(ins, Itob) and stack_ins._comment =='// 1':
-                math_stack.append(ins)
+                self.math_stack.append(ins)
                 continue
 
             if isinstance(ins, (AppGlobalGet, AppGlobalGetEx)):
                 if isinstance(stack_ins, Itob) or stack_ins._comment == '// 1':
-                    math_stack.append(ins)
+                    self.math_stack.append(ins)
                 else: 
-                    math_stack = []
+                    self.math_stack = []
                 continue
             
             if self._isMath(ins):
                 if isinstance(ins, (Mul, Mulw, BMul)):
                     if isinstance(stack_ins, (AppGlobalGet, AppGlobalGetEx)):
-                        math_stack.append(ins)
+                        self.math_stack.append(ins)
 
                 else:
-                    math_stack = []
+                    self.math_stack = []
                 continue
             
             if isinstance(ins, AppLocalPut):
                 if isinstance(stack_ins, (Mul, Mulw, BMul)):
-                    math_stack.append(ins)
+                    self.math_stack.append(ins)
                     
-                    if math_stack[0]._line_num not in self.math_start:
-                        self.math_start.append(math_stack[0]._line_num)
+                    if self.math_stack[0]._line_num not in self.math_start:
+                        self.math_start.append(self.math_stack[0]._line_num)
                         print('Mathsploit found starting on line: ', 
-                              math_stack[0]._line_num) 
+                              self.math_stack[0]._line_num) 
                         paths_with_mathploit.append(current_path)
                         has_mathploit = True
                         return
                 else:
-                    math_stack = []
+                    self.math_stack = []
                 continue
 
         for next_bb in bb.next:
@@ -137,22 +138,31 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
             if time.time() - self.start_time > self.max_time:
                 self.analysis_stopped = True
                 return
-            self._check_mathploit(next_bb, current_path, checked_blocks, paths_with_mathploit)
+            self._check_mathploit(next_bb, current_path,  paths_with_mathploit)
 
     def detect(self) -> "SupportedOutput":
 
         paths_with_mathploit: List[List["BasicBlock"]] = []
         
-        # self._check_bbnext(self.teal.bbs[0])
 
-        self._check_mathploit(self.teal.bbs[0], [], [], paths_with_mathploit)
+        self._check_mathploit(self.teal.bbs[0], [], paths_with_mathploit)
 
         description = "Math exploit with smart contract storage - "
         description += "this can allow an attacker to withdraw undue rewards.\n"
         filename = "math_exploit"
 
         if self.analysis_stopped:
+            missed_bbs = []
+            for bb in self.teal.bbs:
+                if bb.idx not in self.checked_bbs:
+                    missed_bbs.append(bb.idx)
+
             description += f"   Analysis stopped due to timeout at {self.max_time} seconds."
+            if len(missed_bbs) > 0:
+                description += f"   {len(missed_bbs)} basic blocks were not checked."
+            else:
+                description += "   All basic blocks were checked."
+            
         else:
             description += f"   Analysis completed in {round(time.time() - self.start_time, 2)} seconds."
 

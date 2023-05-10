@@ -52,7 +52,6 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
         self.max_time = 2000
         self.analysis_stopped = False
         self.math_start = []
-        self.math_stack = []
 
     def _getLastItem(self, list):
         if len(list) > 0:
@@ -81,55 +80,58 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
 
         if bb.idx not in self.checked_bbs:
             self.checked_bbs.append(bb.idx)
+        else:
+            return
 
         has_mathploit = False
+        math_stack = []
         for ins in bb.instructions:
-            stack_ins = self._getLastItem(self.math_stack)
+            stack_ins = self._getLastItem(math_stack)
 
             if ins._comment == '// 1':
                 if not isinstance(ins._prev[0], Global) and not (
                     isinstance(ins._prev[0],Gtxn) and isinstance(ins._prev[0].field,
                                                                   TypeEnum)):
-                    self.math_stack = []
-                    self.math_stack.append(ins)
+                    math_stack = []
+                    math_stack.append(ins)
                 continue
             
             if stack_ins is None:
                 continue
 
             if isinstance(ins, Itob) and stack_ins._comment =='// 1':
-                self.math_stack.append(ins)
+                math_stack.append(ins)
                 continue
 
             if isinstance(ins, (AppGlobalGet, AppGlobalGetEx)):
                 if isinstance(stack_ins, Itob) or stack_ins._comment == '// 1':
-                    self.math_stack.append(ins)
+                    math_stack.append(ins)
                 else: 
-                    self.math_stack = []
+                    math_stack = []
                 continue
             
             if self._isMath(ins):
                 if isinstance(ins, (Mul, Mulw, BMul)):
                     if isinstance(stack_ins, (AppGlobalGet, AppGlobalGetEx)):
-                        self.math_stack.append(ins)
+                        math_stack.append(ins)
 
                 else:
-                    self.math_stack = []
+                    math_stack = []
                 continue
             
             if isinstance(ins, AppLocalPut):
                 if isinstance(stack_ins, (Mul, Mulw, BMul)):
-                    self.math_stack.append(ins)
+                    math_stack.append(ins)
                     
-                    if self.math_stack[0]._line_num not in self.math_start:
-                        self.math_start.append(self.math_stack[0]._line_num)
+                    if math_stack[0]._line_num not in self.math_start:
+                        self.math_start.append(math_stack[0]._line_num)
                         print('Mathsploit found starting on line: ', 
-                              self.math_stack[0]._line_num) 
+                              math_stack[0]._line_num) 
                         paths_with_mathploit.append(current_path)
                         has_mathploit = True
                         return
                 else:
-                    self.math_stack = []
+                    math_stack = []
                 continue
 
         for next_bb in bb.next:

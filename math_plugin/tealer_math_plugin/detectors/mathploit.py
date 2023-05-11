@@ -80,59 +80,57 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
 
         if bb.idx not in self.checked_bbs:
             self.checked_bbs.append(bb.idx)
-        else:
-            return
 
-        has_mathploit = False
-        math_stack = []
-        for ins in bb.instructions:
-            stack_ins = self._getLastItem(math_stack)
+            has_mathploit = False
+            math_stack = []
+            for ins in bb.instructions:
+                stack_ins = self._getLastItem(math_stack)
 
-            if ins._comment == '// 1':
-                if not isinstance(ins._prev[0], Global) and not (
-                    isinstance(ins._prev[0],Gtxn) and isinstance(ins._prev[0].field,
-                                                                  TypeEnum)):
-                    math_stack = []
-                    math_stack.append(ins)
-                continue
-            
-            if stack_ins is None:
-                continue
-
-            if isinstance(ins, Itob) and stack_ins._comment =='// 1':
-                math_stack.append(ins)
-                continue
-
-            if isinstance(ins, (AppGlobalGet, AppGlobalGetEx)):
-                if isinstance(stack_ins, Itob) or stack_ins._comment == '// 1':
-                    math_stack.append(ins)
-                else: 
-                    math_stack = []
-                continue
-            
-            if self._isMath(ins):
-                if isinstance(ins, (Mul, Mulw, BMul)):
-                    if isinstance(stack_ins, (AppGlobalGet, AppGlobalGetEx)):
+                if ins._comment == '// 1':
+                    if not isinstance(ins._prev[0], Global) and not (
+                        isinstance(ins._prev[0],Gtxn) and isinstance(ins._prev[0].field,
+                                                                    TypeEnum)):
+                        math_stack = []
                         math_stack.append(ins)
+                    continue
+                
+                if stack_ins is None:
+                    continue
 
-                else:
-                    math_stack = []
-                continue
-            
-            if isinstance(ins, AppLocalPut):
-                if isinstance(stack_ins, (Mul, Mulw, BMul)):
+                if isinstance(ins, Itob) and stack_ins._comment =='// 1':
                     math_stack.append(ins)
-                    
-                    if math_stack[0]._line_num not in self.math_start:
-                        self.math_start.append(math_stack[0]._line_num)
-                        print('Mathsploit found starting on line: ', 
-                              math_stack[0]._line_num) 
-                        paths_with_mathploit.append(current_path)
-                        has_mathploit = True
-                        return
-                else:
-                    math_stack = []
-                continue
+                    continue
+
+                if isinstance(ins, (AppGlobalGet, AppGlobalGetEx)):
+                    if isinstance(stack_ins, Itob) or stack_ins._comment == '// 1':
+                        math_stack.append(ins)
+                    else: 
+                        math_stack = []
+                    continue
+                
+                if self._isMath(ins):
+                    if isinstance(ins, (Mul, Mulw, BMul)):
+                        if isinstance(stack_ins, (AppGlobalGet, AppGlobalGetEx)):
+                            math_stack.append(ins)
+
+                    else:
+                        math_stack = []
+                    continue
+                
+                if isinstance(ins, AppLocalPut):
+                    if isinstance(stack_ins, (Mul, Mulw, BMul)):
+                        math_stack.append(ins)
+                        
+                        if math_stack[0]._line_num not in self.math_start:
+                            self.math_start.append(math_stack[0]._line_num)
+                            print('Mathsploit found starting on line: ', 
+                                math_stack[0]._line_num) 
+                            paths_with_mathploit.append(current_path)
+                            has_mathploit = True
+                            return
+                    else:
+                        math_stack = []
+                    continue
 
         for next_bb in bb.next:
             # if the process has been running for more than 200 seconds, return to

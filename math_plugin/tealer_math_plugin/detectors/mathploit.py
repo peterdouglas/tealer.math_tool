@@ -67,103 +67,76 @@ A contract sets a local storage (typically a ratio of a staking pool) to 1 * Pre
     
     def _check_mathploit(
         self,
-        bb: BasicBlock,
-        current_path: List[BasicBlock],
+        bb: List[BasicBlock],
+        indx: int,
         paths_with_mathploit: List[List[BasicBlock]],
     ) -> None:
-        # check for loops
-        #print(bb.idx, bb.instructions[0]._line_num, bb.instructions[0]._comment)
-        if bb in current_path:
-            return
         
-        current_path = current_path + [bb]
+        has_mathploit = False
+        math_stack = []
+        for ins in bb[indx].instructions:
+            stack_ins = self._getLastItem(math_stack)
 
-        if bb.idx not in self.checked_bbs:
-            self.checked_bbs.append(bb.idx)
-
-            has_mathploit = False
-            math_stack = []
-            for ins in bb.instructions:
-                stack_ins = self._getLastItem(math_stack)
-
-                if ins._comment == '// 1':
-                    if not isinstance(ins._prev[0], Global) and not (
-                        isinstance(ins._prev[0],Gtxn) and isinstance(ins._prev[0].field,
-                                                                    TypeEnum)):
-                        math_stack = []
-                        math_stack.append(ins)
-                    continue
-                
-                if stack_ins is None:
-                    continue
-
-                if isinstance(ins, Itob) and stack_ins._comment =='// 1':
+            if ins._comment == '// 1':
+                if not isinstance(ins._prev[0], Global) and not (
+                    isinstance(ins._prev[0],Gtxn) and isinstance(ins._prev[0].field,
+                                                                TypeEnum)):
+                    math_stack = []
                     math_stack.append(ins)
-                    continue
+                continue
+            
+            if stack_ins is None:
+                continue
 
-                if isinstance(ins, (AppGlobalGet, AppGlobalGetEx)):
-                    if isinstance(stack_ins, Itob) or stack_ins._comment == '// 1':
+            if isinstance(ins, Itob) and stack_ins._comment =='// 1':
+                math_stack.append(ins)
+                continue
+
+            if isinstance(ins, (AppGlobalGet, AppGlobalGetEx)):
+                if isinstance(stack_ins, Itob) or stack_ins._comment == '// 1':
+                    math_stack.append(ins)
+                else: 
+                    math_stack = []
+                continue
+            
+            if self._isMath(ins):
+                if isinstance(ins, (Mul, Mulw, BMul)):
+                    if isinstance(stack_ins, (AppGlobalGet, AppGlobalGetEx)):
                         math_stack.append(ins)
-                    else: 
-                        math_stack = []
-                    continue
-                
-                if self._isMath(ins):
-                    if isinstance(ins, (Mul, Mulw, BMul)):
-                        if isinstance(stack_ins, (AppGlobalGet, AppGlobalGetEx)):
-                            math_stack.append(ins)
 
-                    else:
-                        math_stack = []
-                    continue
-                
-                if isinstance(ins, AppLocalPut):
-                    if isinstance(stack_ins, (Mul, Mulw, BMul)):
-                        math_stack.append(ins)
-                        
-                        if math_stack[0]._line_num not in self.math_start:
-                            self.math_start.append(math_stack[0]._line_num)
-                            print('Mathsploit found starting on line: ', 
-                                math_stack[0]._line_num) 
-                            paths_with_mathploit.append(current_path)
-                            has_mathploit = True
-                            return
-                    else:
-                        math_stack = []
-                    continue
-
-        for next_bb in bb.next:
-            # if the process has been running for more than 200 seconds, return to
-            # detect method
-            if time.time() - self.start_time > self.max_time:
-                self.analysis_stopped = True
-                return
-            self._check_mathploit(next_bb, current_path,  paths_with_mathploit)
+                else:
+                    math_stack = []
+                continue
+            
+            if isinstance(ins, AppLocalPut):
+                if isinstance(stack_ins, (Mul, Mulw, BMul)):
+                    math_stack.append(ins)
+                    
+                    if math_stack[0]._line_num not in self.math_start:
+                        self.math_start.append(math_stack[0]._line_num)
+                        print('Mathsploit found starting on line: ', 
+                            math_stack[0]._line_num) 
+                        paths_with_mathploit.append(current_path)
+                        has_mathploit = True
+                        return
+                else:
+                    math_stack = []
+                continue
+            
+            if len(bb) < indx + 1:
+                self._check_mathploit(bb, indx + 1,  paths_with_mathploit)
 
     def detect(self) -> "SupportedOutput":
 
         paths_with_mathploit: List[List["BasicBlock"]] = []
         
 
-        self._check_mathploit(self.teal.bbs[0], [], paths_with_mathploit)
+        self._check_mathploit(self.teal.bbs, 0, paths_with_mathploit)
 
         description = "Math exploit with smart contract storage - "
         description += "this can allow an attacker to withdraw undue rewards.\n"
         filename = "math_exploit"
 
-        if self.analysis_stopped:
-            missed_bbs = []
-            for bb in self.teal.bbs:
-                if bb.idx not in self.checked_bbs:
-                    missed_bbs.append(bb.idx)
-
-            description += f"   Analysis stopped due to timeout at {self.max_time} seconds."
-            if len(missed_bbs) > 0:
-                description += f"   {len(missed_bbs)} basic blocks were not checked."
-            else:
-                description += "   All basic blocks were checked."
-            
-        else:
-            description += f"   Analysis completed in {round(time.time() - self.start_time, 2)} seconds."
+        description += f"   Analysis completed in {round(time.time() - self.start_time, 2)} seconds."
 
         return self.generate_result(paths_with_mathploit, description, filename)
